@@ -1,5 +1,5 @@
 ---
-title: "Stat 153 Final Project"
+title: "California Forest Fires: Project Report"
 author: "Ishaan Srivastava"
 output: 
         bookdown::pdf_document2: 
@@ -12,9 +12,11 @@ library(TSA)
 library(astsa)
 library(forecast)
 library(knitr)
+library(kableExtra)
 ```
 
 ```{r}
+# Helper function for diagnostic plots generated in Figure 6
 sarima_wPACF = function (xdata, p, d, q, P = 0, D = 0, Q = 0, S = -1, details = TRUE, 
           xreg = NULL, Model = TRUE, fixed = NULL, tol = sqrt(.Machine$double.eps), 
           no.constant = FALSE, max.lag = -1) 
@@ -70,7 +72,7 @@ sarima_wPACF = function (xdata, p, d, q, P = 0, D = 0, Q = 0, S = -1, details = 
     par(mar = c(2.2, 2, 1, 0.25) + 0.5, mgp = c(1.6, 0.6, 
                                                 0))
     
-    ## Standardized residuals
+    # Standardized residuals
     
     rs <- fitit$residuals
     stdres <- rs/sqrt(fitit$sigma2)
@@ -78,17 +80,17 @@ sarima_wPACF = function (xdata, p, d, q, P = 0, D = 0, Q = 0, S = -1, details = 
     plot.ts(stdres, main = "Standardized Residuals", ylab = "")
     if (Model) {
       if (S < 0) {
-        title(paste("Model: (", p, ",", d, ",", q, ")", 
+        title(paste("Model: (", p, ",", q, ")", 
                     sep = ""), adj = 0)
       }
       else {
-        title(paste("Model: (", p, ",", d, ",", q, ") ", 
+        title(paste("Model: (", p, ",", q, ") ", 
                     "(", P, ",", D, ",", Q, ") [", S, "]", sep = ""), 
               adj = 0)
       }
     }
     
-    ## ACF
+    # ACF
     
     alag <- max(10 + sqrt(num), 3 * S, max.lag)
     ACF = stats::acf(rs, alag, plot = FALSE, na.action = na.pass)$acf[-1]
@@ -99,7 +101,7 @@ sarima_wPACF = function (xdata, p, d, q, P = 0, D = 0, Q = 0, S = -1, details = 
          , main = "ACF of Residuals")
     abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1,4, 4))
     
-    ## Q-Q Plot
+    # Q-Q Plot
     
     stats::qqnorm(stdres, main = "Normal Q-Q Plot of Std Residuals")
     sR <- !is.na(stdres)
@@ -124,7 +126,7 @@ sarima_wPACF = function (xdata, p, d, q, P = 0, D = 0, Q = 0, S = -1, details = 
     polygon(xx, yy, border = NA, col = gray(0.6, alpha = 0.2))
     
     
-    ## PACF
+    # PACF
     
     alag <- max(10 + sqrt(num), 3 * S, max.lag)
     PACF = stats::pacf(rs, alag, plot = FALSE, na.action = na.pass)$acf
@@ -134,8 +136,7 @@ sarima_wPACF = function (xdata, p, d, q, P = 0, D = 0, Q = 0, S = -1, details = 
          main = "PACF of Residuals")
     abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1,4, 4))
     
-    
-    ##?
+    # p-values for Ljung-Box Statistic
     
     nlag <- ifelse(S < 7, 20, 3 * S)
     ppq <- p + q + P + Q - sum(!is.na(fixed))
@@ -173,8 +174,8 @@ sarima_wPACF = function (xdata, p, d, q, P = 0, D = 0, Q = 0, S = -1, details = 
        AIC = AIC, AICc = AICc, BIC = BIC)
 }
 
+# Plot periodogram
 pgram = function(x) {
-  # Using function provided in lecture and lab
   
   N = length(x)
   m = floor(N / 2)
@@ -190,256 +191,333 @@ pgram = function(x) {
 
 # Executive Summary
 
-In this report, we analyse time series data regarding forest fires in Bear County, California. Using past annual data, we estimate the number of acres projected to burn for the next ten years so that the Bear County Fire Department can allocate budget and resources accordingly. We choose a parametric signal model with an ARMA(0, 11) noise model and see that the amount of acres burned annually is projected to alternately increase and drop across the next 10 years, and thus Bear County must plan accordingly.
+In this report, we analyse time series data regarding forest fires in Bear County, California. Using past annual data, we estimate the number of acres projected to burn for the next ten years so that the Bear County Fire Department can allocate resources and plan accordingly. We choose a second-order nonparametric differencing signal model with an ARMA(1, 2) noise model and forecast that the amount of acres burned annually is projected to increase by ~50% in the coming years, suggesting an increase in fires in terms of severity and/or sheer quantity.
 
 # Exploratory Data Analysis
 
 We begin by plotting the data below in Figure 1.
 
 ```{r}
+# Basic data loading and extraction
 data = read.csv(file = "projectdata_fires.csv", row.names = 1)
 year = data$year
 acres = data$acres
 ```
 
 ```{r eda, fig.cap="Acres burned annually in Bear County", out.width = "100%", fig.align = 'center', fig.height= 3}
+# Plotting data vs. time for EDA
 plot(year, acres, "l", xlab = "Year", main = "Acres Burned Annually in Bear County", ylab = "Acres Burned")
 ``` 
 
-Observing the plot, we see that the amount of land burned annually was consistently over 100,000 acres before a steep fall around the 1950s; since then the amount has been around 60,000-70,000 acres annually. Post the 1950s, the data has been broadly consistent in terms of variance ie. homoschedastic with some fluctuations especially in more recent years, while the trend has not followed any visually identifiable pattern. Note that since the data is recorded annually, there is no daily or monthly data that we may use to account for seasonality in terms of the wildfire season in a given year ie. intra-annual seasonality. The periodogram of the data (not shown in this report) shows no obvious seasonal frequencies across the years ie. inter-annual seasonality.
+Observing the plot, we see that the amount of land burned annually was consistently over 100,000 acres before a steep fall around the 1950s; since then the amount has been around 60,000-70,000 acres annually. Post the 1950s, the data have been broadly consistent in terms of variance ie. homoschedastic with some fluctuations, especially in more recent years, while the trend has not followed any visually identifiable pattern. Note that since the data are recorded annually, there is no daily or monthly data that we may use to account for seasonality in terms of the wildfire season in a given year ie. intra-annual seasonality. The periodogram of the data (not shown for concision) shows no obvious seasonal frequencies across the years ie. inter-annual seasonality.
 
 # Models Considered
 
-We construct two classes of models in order to model the signal in the data, namely non-parametric differencing models and parametric linear regression models. Each model is supplemented with two ARMA models to account for the remaining noise, resulting in four final models included in this report.
-
-<!--This deterministic signal model is detailed in Equation(1)below, whereXtis the additive noise term.. -->
-
-<!--Table 1: Cross-validated out-of-sample root mean squared prediction error for the four models underconsideration.-->
-
+We construct two classes of models in order to model the signal in the data, namely nonparametric differencing models and parametric linear regression models. Each model is supplemented with two ARMA models to account for the remaining noise, resulting in four final models included in this report.
 
 ## Model 1: Differencing
 
-We first employ differencing models. Before differencing, the data was transformed using a box-cox transformation with parameter $\lambda$ such that the output most closely resembled a Gaussian AR process, with MLE of $\lambda = -0.4$. Hence the transformed data is $f(x) = \dfrac{x^{-0.4} - 1}{-0.4}$. Bearing in mind the El Niño Southern Oscillation (ENSO) that occurs every 2–7 years and can have a large impact on regular rainfall patterns and temperatures, I experimented differencing the data with a variety of lags, finally choosing lag 6. Beyond this, I also experimented with higher order differencing to find which models resulted in noise or residuals most closely resembling a stationary process.
+We first employ differencing models. Before differencing, the data were transformed using a Box-Cox transformation with parameter $\lambda$ such that the output most closely resembled a Gaussian AR process, with MLE of $\lambda = -0.4$. Hence the transformed data are $f(x) = \dfrac{x^{-0.4} - 1}{-0.4}$. Bearing in mind the El Niño Southern Oscillation (ENSO) that occurs every 2–7 years and can have a large impact on temperatures and regular rainfall patterns, I experimented differencing the data with a variety of lags, finally choosing a lag of 6 years. Beyond this, I also experimented with higher-order differencing to find which models resulted in noise or residuals most closely resembling a stationary process.
 
-With this heuristic in mind, the differencing model I finally chose was $\nabla_6 \nabla f(Fires)$, with $f(Fires)$ referring to the aforementioned Box-Cox transformation with $\lambda = -0.4$. The residuals are plotted below.
+With this heuristic in mind, the differencing model I finally chose was $\nabla_1 \nabla_6 f(\text{Fires})$, with $f(\text{Fires})$ referring to the aforementioned Box-Cox transformed data with $\lambda = -0.4$. The residuals are plotted below.
 
 ```{r, fig.height= 3, fig.cap="Residuals after differencing transformed fires data"}
+# Transform data with Box-Cox transformation, 
+# then perform second order differencing
 transformed_acres = (acres^-0.4 - 1)/-0.4
 differenced_data = diff(diff(transformed_acres), 6)
-plot(x = year[8:79], y = differenced_data, ylab = "Residuals", main=expression(paste(nabla[1],nabla[6],f(Fires))), type ="l", xlab = "Year")
+plot(x = year[8:79], y = differenced_data, ylab = "Residuals", 
+     main = expression(paste(nabla[1], nabla[6], f(Fires))), 
+     type ="l", xlab = "Year")
 ```
 
-There is admittedly some heteroschedasticity at the beginning and end of the differenced data, yet the residuals broadly resemble a stationary process. The differencing accounts for the peaks and troughs that seem to occur around 6 years, and also seek to eliminate the underlying trend.
+There is admittedly some heteroschedasticity at the beginning and end of the differenced data, yet the residuals broadly resemble a stationary process. The differencing accounts for the peaks and troughs that seem to occur every 6 years, and also serves to eliminate the underlying trend.
 
-```{r, evluate = FALSE, include=FALSE}
-model_boi_1 = sarima(differenced_data, d = 0, p = 0, q = 6)
-model_boi_2 = sarima(differenced_data, d = 0, p = 1, q = 2)
-new_year = year[year > 1947]
-new_acres = acres[year > 1947]
-new_time = 1:length(new_acres)
-new_model_boi = lm(log(new_acres) ~ new_time * sin(2*pi*new_time*1/length(new_acres)) * cos(2*pi*new_time*1/length(new_acres)) * sin(2*pi*new_time*12/length(new_acres)) * cos(2*pi*new_time*12/length(new_acres)))
-residual_boi = residuals(new_model_boi)
+```{r,include=FALSE, message=FALSE, results="hide"}
+# Define ARMA noise models for parametric residuals. Defined in this cell to suppress output.
+difference_model_1 = sarima(differenced_data, d = 0, p = 0, q = 6)
+difference_model_2 = sarima(differenced_data, d = 0, p = 1, q = 2)
 ```
 
-
-
-```{r, fig.cap="ACF and PACF of residuals. ACF and PACF values of the ARMA(6, 0) process are marked in red, while those of the ACF and PACF values of the ARMA(1, 2) process are marked in blue", fig.height=3}
-par(mfrow=c(1,2))
+```{r, fig.cap="ACF and PACF of residuals. ACF and PACF values of the ARMA(0, 6) process are marked in red, while those of the ACF and PACF values of the ARMA(1, 2) process are marked in blue", fig.height=3}
+# Plot ACF, PACF of differecning residuals, and those of both noise models for 20 lags
+par(mfrow = c(1, 2))
 lag.max = 20
 ACF = acf(differenced_data, lag.max = lag.max, plot = FALSE)$acf
-PACF = pacf(differenced_data,lag.max = lag.max,plot = FALSE)$acf
+PACF = pacf(differenced_data, lag.max = lag.max, plot = FALSE)$acf
 ylim = c(-0.5, 0.5)
 Lag = 1:lag.max
 L = 2/sqrt(length(differenced_data))
 
-## ACF
-    plot(Lag, ACF, type = "h"
-         , ylim = ylim
-         , main = "ACF of Residuals")
-    abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1,4, 4))
-    table_boi_1 = data.frame(model_boi_1$ttable)
-    a = ARMAacf(ma = table_boi_1$Estimate[1:6], lag.max = lag.max)
-    points(Lag,a[-1],col='red',cex=.5)
-    
-    table_boi_2 = data.frame(model_boi_2$ttable)
-    a = ARMAacf(ma = c(model_boi_2$fit$coef[2], model_boi_2$fit$coef[3]), ar = model_boi_2$fit$coef[1], 
-                lag.max = lag.max)
-    points(Lag,a[-1],col='blue',cex=.5)
-    plot(Lag, PACF, type = "h"
-         , ylim = ylim
-         , main = "PACF of Residuals")
-    abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1,4, 4))
-    p = ARMAacf(ma = table_boi_1$Estimate[1:6], lag.max = lag.max, pacf = TRUE)
-    points(Lag,p,col='red',cex=.5)
-    p = ARMAacf(ma = c(model_boi_2$fit$coef[2], model_boi_2$fit$coef[3]), ar = model_boi_2$fit$coef[1], 
-                lag.max = lag.max, pacf = TRUE)
-    points(Lag, p, col='blue',cex=.5)
+# ACF 
+# Residuals
+plot(Lag, ACF, type = "h", 
+     ylim = ylim, 
+     main = "ACF of Residuals")
+abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1, 4, 4))
 
+# ARMA(0, 6)
+difference_table_1 = data.frame(difference_model_1$ttable)
+arma_acf_1 = ARMAacf(ma = difference_table_1$Estimate[1:6], lag.max = lag.max)
+points(Lag, arma_acf_1[-1], col = 'red', cex = 0.5)
+    
+# ARMA(1, 2)
+difference_table_2 = data.frame(difference_model_2$ttable)
+arma_acf_2 = ARMAacf(ma = c(difference_model_2$fit$coef[2], 
+                   difference_model_2$fit$coef[3]), 
+            ar = difference_model_2$fit$coef[1], lag.max = lag.max)
+points(Lag, arma_acf_2[-1], col = 'blue', cex = 0.5)
+
+# PACF 
+# Residuals
+plot(Lag, PACF, type = "h", 
+     ylim = ylim, main = "PACF of Residuals")
+abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1, 4, 4))
+
+# AMRA(0, 6)
+arma_pacf_1 = ARMAacf(ma = difference_table_1$Estimate[1:6], 
+                      lag.max = lag.max, pacf = TRUE)
+points(Lag, arma_pacf_1, col = 'red', cex = 0.5)
+
+# ARMA(1, 2)
+arma_pacf_2 = ARMAacf(ma = c(difference_model_2$fit$coef[2], 
+                   difference_model_2$fit$coef[3]), 
+            ar = difference_model_2$fit$coef[1], 
+                lag.max = lag.max, pacf = TRUE)
+points(Lag, arma_pacf_2, col = 'blue', cex = 0.5)
 ```
 
-In the plots of the autocorrelation function (ACF) and partial autocorrelation function (PACF), most values are within the blue bands corresponding to the 95% confidence interval constructed under the hypothesis of the stationary process being white noise for that lag. 
+In the plots of the autocorrelation function (ACF) and partial autocorrelation function (PACF) in Figure 3, most values are within the blue bands corresponding to the 95% confidence interval constructed under the hypothesis of the stationary process being white noise for that lag. 
 
-### ARMA(6, 0)
+### ARMA(0, 6)
 
-Based on the fact that the autocorrelations in the ACF plot are all within the blue bands after the 6th lag, I first modelled the residuals using an ARMA(6, 0) model with q = 6 and p = 0, otherwise known as an MA(6) model. This model treats the PACF values at lags 1 and 2 falling outside the blue bands as random chance, rather than an indication that there's some statistically significant autoregressive component in the residuals. We see that model ACF predictions track the track the true ACF values closely, with greater deviation from the true PACF values. 
+Based on the fact that the autocorrelations in the ACF plot are all within the blue bands after the 6th lag, I first modelled the residuals using an ARMA(0, 6) model with q = 6 and p = 0, otherwise known as a MA(6) model. This model treats the PACF values at lags 1 and 2 falling outside the blue bands as random chance, rather than an indication that there's some statistically significant autoregressive component in the residuals. We see that model ACF predictions track the true ACF values closely, with greater deviation in the case of model PACF predictions and values. 
 
 ### ARMA(1, 2)
 
-For my second stationary process model, I used auto.arima with modified parameters, yielding an ARMA(1, 2) model. This model seems to resemble the true ACF and PACF values more closely than the ARMA(6, 0) model for the first few lags, but on the whole the ARMA(6, 0) tends to perform better for greater lags and also in the cases where the true autocorrelation or partial autocorrelation is large. In both cases, we see satisfactory performance and thus move on to considering our next signal model.
+For my second stationary process model, I used auto.arima with modified parameters, thereby yielding an ARMA(1, 2) model. This model seems to resemble the true ACF and PACF values more closely than the previous ARMA(0, 6) model for the first few lags, while the ARMA(0, 6) model tends to perform better for greater lags and in the cases where the true autocorrelation or partial autocorrelation is large. In both cases, we see satisfactory performance and thus move on to considering our next signal model.
 
 ## Model 2: Parametric Modelling
 
-When fitting parametric linear regression models to the data, I found the model resulting in non-stationary residuals due to discrepancies at either end of the data ie. the earliest data and the most recent data. As noted, the data before the 1950s seems to be substantially different from the rest of the data and since the primary goal is to forecast the data for the next 10 years, I exclude all data from before 1948, then produce a periodogram of the data to choose the corresponding Fourier frequencies for my model. Based on the periodogram, I chose the Fourier frequencies of 1/62 and 2/62, corresponding to the two peaks of the periodogram. The 62 comes from the number of observations used to construct the periodogram, and the 1 and 2 are the indices of the peaks. The final model is $$\text{log(y) = t * }sin(\frac{2\pi t}{62}) * cos(\frac{2\pi t}{62}) * sin(\frac{4\pi t }{62}) * cos(\frac{4\pi t }{62})$$ with * denoting interaction terms.
+When fitting parametric linear regression models to the data, I found the model resulting in non-stationary residuals due to discrepancies at either end of the data ie. the earliest data and the most recent data. As noted, the data before the 1950s seem to be substantially different from the rest of the data and since the primary goal is to forecast the data for the next 10 years, I exclude all data from before 1948 and then produce a periodogram of the data to choose the corresponding Fourier frequencies for my model. Based on the periodogram, I chose the Fourier frequencies of 1/62 and 2/62, corresponding to the two peaks of the periodogram. The 62 comes from the number of observations used to construct the periodogram, and the 1 and 2 are the indices of the peaks. The final model is $$\text{log(y) = t} * sin(\frac{2\pi t}{62}) * cos(\frac{2\pi t}{62}) * sin(\frac{4\pi t }{62}) * cos(\frac{4\pi t }{62})$$ where $\text{y}$ is the number of acres burned annually, $\text{t}$ is the year, and * denotes interaction terms. Note that we take the log of the data as a variance stablising transform, hence we model $\text{log(y)}$ instead of $\text{y}$ directly.
 
-```{r, include = FALSE,eval=FALSE}
-model_boi_3 = sarima(residual_boi, d = 0, p = 0, q = 0, S = 5, Q =2, P =2)
-model_boi_4 = sarima(residual_boi, d = 0, p = 11, q = 0, S = 0, Q = 0, P = 0)
+```{r, fig.height= 3, message=FALSE, results = "hide", fig.cap="Residuals for parametric signal model $\\text{log(y) = t} * sin(\\frac{2\\pi t}{62}) * cos(\\frac{2\\pi t}{62}) * sin(\\frac{4\\pi t }{62}) * cos(\\frac{4\\pi t }{62})$"}
+# Only consider data from 1948 or later
+trimmed_year = year[year > 1947]
+trimmed_acres = acres[year > 1947]
+trimmed_time = 1:length(trimmed_acres)
+trimmed_df = data.frame(trimmed_acres = trimmed_acres, trimmed_time  = trimmed_time)
+
+# Fit parametric linear signal model with interaction terms
+# Using periodogram to determine Fourier frequencies
+trimmed_model = lm(log(trimmed_acres) ~ trimmed_time * sin(2 * pi * trimmed_time * 
+                  1/length(trimmed_acres)) * cos(2 * pi * trimmed_time * 
+                  1/length(trimmed_acres)) * sin(2 * pi * trimmed_time * 
+                  12/length(trimmed_acres)) * cos(2 * pi * trimmed_time * 
+                  12/length(trimmed_acres)), data = trimmed_df)
+
+# Plot residuals
+parametric_residuals = residuals(trimmed_model)
+plot(x = trimmed_year, y = parametric_residuals, ylab = "Residuals", 
+     xlab = "Year", main = "Residuals for Parametric Signal Model", type = "l")
 ```
 
-```{r, fig.height= 3,message=FALSE, results = "hide", fig.cap="Residuals for parametric signal model"}
-new_year = year[year > 1947]
-new_acres = acres[year > 1947]
-new_time = 1:length(new_acres)
-data_boi = data.frame(new_acres = new_acres, new_time  = new_time)
-new_model_boi = lm(log(new_acres) ~ new_time * sin(2*pi*new_time*1/length(new_acres)) * cos(2*pi*new_time*1/length(new_acres)) * sin(2*pi*new_time*12/length(new_acres)) * cos(2*pi*new_time*12/length(new_acres)), data = data_boi)
-plot(x = new_year, y = residuals(new_model_boi), ylab = "Residuals", xlab = "Year", main = "Residuals", type
-```
-
-![ACF and PACF of residuals. ACF and PACF values of the ARMA(2, 2)[5] process are marked in, while those of the ACF and PACF values of the ARMA(0, 11) process are marked in blue](Stat153.png)
-
-The residuals, their autocorrelations, their partial autocorrelations, and corresponding ARMA models of the residuals are plotted above.
+The residuals are plotted below in Figure 4. Their autocorrelations and partial autocorrelations, and those of the corresponding ARMA models are plotted below in Figure 5.
 
 ### SARMA(2, 2)[5]
 
-Based on the strong autocorrelations at lags 5 and 10 only in the ACF plot, I decided to use a seasonal model with S = 5 and Q = 2. Bearing in the mind the pattern of the statistically signifcant partial autocoorelations in the PACF plot, I also chose P = 2, finally ending up with an SARMA(2, 2)[5] model. Note that I experimented with multiplicative models and changing the values of P, Q, and S and found this to be the best at resembling the ACF and PACF of the data. Specifcally the model matches the ACF values almost closesly, but it's off the mark for certain PACF values, especially those at lags 11 and 16.
+Based on the strong autocorrelations at only lags 5 and 10 in the ACF plot (see Figure 5), I decided to use a seasonal model with S = 5 and Q = 2. Bearing in mind the pattern of the statistically signifcant partial autocorelations in the PACF plot, I also chose P = 2, finally ending up with a SARMA(2, 2)[5] model. Note that I experimented both with multiplicative models and changing the values of P, Q, and S, and found this to be the most effective at resembling the ACF and PACF of the data. Specifcally the model matches the ACF values closely, but is inaccurate for certain PACF values, especially those at lags 11 and 16.
 
-### ARMA(1, 2)
+### ARMA(11, 0)
 
-As in the case of differencing, I used auto.arima with modified parameters for my second stationary process model, yielding an ARMA(0, 11) model, or simply an AR(11) model. As seen in the above figure, this model clearly outperforms the SARMA(2, 2)[5] model by having similar performnance on the ACF values and far better performance on the PACF values, although it also doesn't model the true PACF value at lag 16 accurately.
+As in the case of differencing, I used auto.arima with modified parameters for my second noise model, yielding an ARMA(11, 0) model, or simply an AR(11) model. As seen in figure 5 below, this model clearly outperforms the SARMA(2, 2)[5] model by having similar performance on the ACF values and far better performance on the PACF values, although it also doesn't model the true PACF value at lag 16 accurately.
 
-```{r, eval = FALSE}
-par(mfrow=c(1,2))
+```{r, include = FALSE}
+# Define ARMA noise models for parametric residuals. Defined in this cell to suppress output.
+parametric_model_1 = sarima(parametric_residuals, d = 0, p = 0, q = 0, S = 5, Q = 2, P = 2)
+parametric_model_2 = sarima(parametric_residuals, d = 0, p = 11, q = 0, S = 0, Q = 0, P = 0)
+```
+
+```{r, fig.height=3, fig.cap= "ACF and PACF of residuals. ACF and PACF values of the SARMA(2, 2)[5] process are marked in red, while those of the ARMA(11, 0) process are marked in blue"}
+# Plot ACF, PACF of parametric residuals, and those of both noise models for 20 lags
+par(mfrow = c(1, 2))
 lag.max = 20
-ACF = acf(residual_boi, lag.max = lag.max, plot = FALSE)$acf
-PACF = pacf(residual_boi, lag.max = lag.max, plot = FALSE)$acf
+ACF = acf(parametric_residuals, lag.max = lag.max, plot = FALSE)$acf
+PACF = pacf(parametric_residuals, lag.max = lag.max, plot = FALSE)$acf
 ylim = c(-1, 1)
 Lag = 1:lag.max
-L = 2/sqrt(length(residual_boi))
+L = 2/sqrt(length(parametric_residuals))
 
-    plot(Lag, ACF, type = "h"
-         , ylim = ylim
-         , main = "ACF of Residuals")
-    abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1,4, 4))
-    table_boi_3 = data.frame(model_boi_3$ttable)
-    a = ARMAacf(ma = c(0,0,0,0,table_boi_3$Estimate[3],0,0,0,0,table_boi_3$Estimate[4]), ar =  c(0,0,0,0,table_boi_3$Estimate[1],0,0,0,0,table_boi_3$Estimate[2]), lag.max = lag.max)
-    points(Lag,a[-1],col='red',cex=.5)
+# ACF
+# Residuals
+plot(Lag, ACF, type = "h", 
+    ylim = ylim, main = "ACF of Residuals")
+abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1,4, 4))
 
-    table_boi_4 = data.frame(model_boi_4$ttable)
-    a = ARMAacf(ar = c(table_boi_4$Estimate[1:11]), lag.max = lag.max)
-    points(Lag,a[-1],col='blue',cex=.5)
-# 
-     plot(Lag, PACF, type = "h", ylim = ylim, main = "PACF of Residuals")
-     abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1,4, 4))
-#     
-#     
-     p = ARMAacf(ma = c(0,0,0,0,table_boi_3$Estimate[3],0,0,0,0,table_boi_3$Estimate[4]), ar =    c(0,0,0,0,table_boi_3$Estimate[1],0,0,0,0,table_boi_3$Estimate[2]), lag.max = lag.max, pacf = TRUE)
-     points(Lag, p,col='red',cex=.5)
-     p = ARMAacf(ar = table_boi_4$Estimate[1:11], ma = c(0), lag.max = lag.max, pacf = TRUE)
-     points(Lag,p,col='blue',cex=.5)
+# SARMA(2, 2)[5]
+parametric_table_1 = data.frame(parametric_model_1$ttable)
+arma_acf_3 = ARMAacf(ma = c(0, 0, 0, 0, parametric_table_1$Estimate[3], 0, 0, 0, 0, 
+            parametric_table_1$Estimate[4]), ar = c(0, 0, 0, 0, 
+            parametric_table_1$Estimate[1], 0, 0, 0, 0, 
+            parametric_table_1$Estimate[2]), lag.max = lag.max)
+points(Lag, arma_acf_3[-1], col = 'red', cex = 0.5)
+
+# ARMA(11, 0)
+parametric_table_2 = data.frame(parametric_model_2$ttable)
+arma_acf_3 = ARMAacf(ar = c(parametric_table_2$Estimate[1:11]), lag.max = lag.max)
+points(Lag, arma_acf_3[-1], col = 'blue', cex = 0.5)
+
+# PACF
+# Residuals
+plot(Lag, PACF, type = "h", ylim = ylim, main = "PACF of Residuals")
+abline(h = c(0, -L, L), lty = c(1, 2, 2), col = c(1,4, 4))
+
+# SARMA(2, 2)[5]
+arma_pacf_3 = ARMAacf(ma = c(0, 0, 0, 0, parametric_table_1$Estimate[3], 0, 0, 0, 0, 
+            parametric_table_1$Estimate[4]), ar = c(0, 0, 0, 0, 
+            parametric_table_1$Estimate[1], 0, 0, 0, 0,                                                                            parametric_table_1$Estimate[2]), lag.max = lag.max, pacf = TRUE)
+points(Lag, arma_pacf_3, col = 'red', cex = 0.5)
+
+# ARMA(11, 0)
+arma_pacf_4 = ARMAacf(ar = parametric_table_2$Estimate[1:11], 
+              ma = c(0), lag.max = lag.max, pacf = TRUE)
+points(Lag, arma_pacf_4, col = 'blue', cex = 0.5)
 ```
 
 ## Model Selection
 
-To select which model to use, I performed time series cross validation, with non overlapping test sets rolling through the past 10 years in the data in yearly segments. For the signal model, the entire data before the test set is used before differencing, but only data after 1948 is used for training the parametric model. Based on Root Mean Squared Prediction Error (RMSPE), the parametric signal model with the ARMA(0, 11) model was chosen. The RMSPE values themselves are available in the table above. We note that the parametric signal models have much lower PMSPE compared to the differencing models, which may raise concerns about overfitting. Yet given our use of cross-validation, this should have been safely mitigated.
+To select which model to use, I performed time series cross-validation, with validation sets rolling through the past 10 years in the data in yearly segments. The Root Mean Squared Prediction Error (RMSPE) values for each model are available in Table 1 below. We first note the large difference in the RMSPE values between the linear regression signal models and the second-order differencing signal models, which is likely casued by overfitting in the case of the linear regression signal model. We leave the exploration of other suitable parametric signal models for future reserch. Based on RMSPE values, we could choose either differencing model. Ultimately we choose the differencing model with the ARMA(1, 2) noise modelling process based on the agreement between the predicted and observed autocorelation and partial autocorrelations in Figure 3. 
 
 ```{r, include = FALSE, fig.show="hide"}
-sum_squared_errors <- c(model1.1=0, model1.2=0, model2.1=0, model2.2=0)
+# Time series cross-validation
+
+# Helper function to invert Box-Cox transformation
+untransform = function(transformed_data) {
+  return((transformed_data * -0.4 + 1) ^ -2.5)
+}
+
+sum_squared_errors <- c(model1.1 = 0, model1.2 = 0, model2.1 = 0, model2.2 = 0)
+
+# Validation sets rolling through the past 10 years
 for (i in 10:1) {
   N = 79 - i
-  train_set <- acres[1:(79 - i)]
-  test_set <- acres[(79 - i + 1): 79]
+  train_set = acres[1:N]
+  validation_set = acres[(N + 1): 79]
   
-  signal.forecast1 = predict(new_model_boi, data.frame(new_time = (62 - i + 1): 62))
-  noise.forecast1.1 = sarima.for(new_model_boi$residuals, n.ahead=i, p=0,d =0, q=0, S=5, P=2, Q = 2)$pred
-  noise.forecast1.2 = sarima.for(new_model_boi$residuals, n.ahead=i, p=11, d=0, q=0)$pred
+  # Signal model 1 - parametric linear regression
+  cv_acres = train_set
+  cv_time = 1:length(train_set)
+  cv_df = data.frame(cv_acres = cv_acres, cv_time  = cv_time)
+  cv_model = lm(log(cv_acres) ~ cv_time * sin(2 * pi * cv_time * 
+                  1/length(cv_acres)) * cos(2 * pi * cv_time * 
+                  1/length(cv_acres)) * sin(2 * pi * cv_time * 
+                  12/length(cv_acres)) * cos(2 * pi * cv_time * 
+                  12/length(cv_acres)), data = cv_df)
+  
+  signal.forecast1 = predict(cv_model, data.frame(cv_time = (N + 1): 79))
+  
+  noise.forecast1.1 = sarima.for(cv_model$residuals, n.ahead = i, 
+                                 p = 0,d = 0, q = 0, S = 5, 
+                                 P = 2, Q = 2)$pred
+  noise.forecast1.2 = sarima.for(cv_model$residuals, n.ahead = i, 
+                                 p = 11, d = 0, q = 0)$pred
+  
   forecast1.1 = exp(signal.forecast1 + noise.forecast1.1)
   forecast1.2 = exp(signal.forecast1 + noise.forecast1.2)
 
-  # Signal model 2 - Differencing
-  noise.forecast2.1 = sarima.for(transformed_acres, n.ahead=i, p=0, d=1, q=6, P=0, D=1, Q=10, S=6)$pred
-  noise.forecast2.2 = sarima.for(transformed_acres, n.ahead=i, p=1, d=1, q=2, S=6, Q=0, D =1)$pred
+  # Signal model 2 - differencing
+  # Note that we have to untransform the forecast to be comparable to the 
+  # validation set
+  noise.forecast2.1 = sarima.for(transformed_acres, n.ahead = i, 
+                                 p = 0, d = 1, q = 6, P = 0, 
+                                 D = 1, Q = 10, S = 6)$pred
+  noise.forecast2.2 = sarima.for(transformed_acres, n.ahead = i, 
+                                 p = 1, d = 1, q = 2, 
+                                 S = 6, Q = 0, D = 1)$pred
   forecast2.1 = numeric(i)
   forecast2.2 = numeric(i)
+  
+  # We have different for loops to account for the fact that we have lag 6 
+  # differencing, followed by second-order differencing 
+  
+  # We look at min(i, 6) since our validation set is of length i
   for(j in 1:(min(i, 6))){
-          forecast2.1[j] = noise.forecast2.1[j] + train_set[N+j-6]
-                                + train_set[N+j-1] - train_set[N+j-6-1]
-          forecast2.2[j] = noise.forecast2.2[j] + train_set[N+j-6]
-                                + train_set[N+j-1] - train_set[N+j-6-1]
+          forecast2.1[j] = noise.forecast2.1[j] + train_set[N + j - 6]
+                                + train_set[N + j - 1] - train_set[N + j - 6 - 1]
+          forecast2.2[j] = noise.forecast2.2[j] + train_set[N + j - 6]
+                                + train_set[N + j - 1] - train_set[N + j - 6 - 1]
   }
   if (i >= 7) {
   for(j in 7:i){
-          forecast2.1[j] = noise.forecast2.1[j] + forecast2.1[j-6] #this is hat(Y)_[N+i-7]
-                              + train_set[N+j-6] - train_set[N+j-6-1]
-          forecast2.2[j] = noise.forecast2.2[j] + forecast2.2[j-6] #this is hat(Y)_[N+i-7]
-                                + train_set[N+j-6] - train_set[N+j-6-1]
+          forecast2.1[j] = noise.forecast2.1[j] + forecast2.1[j - 6] #this is hat(Y)_[N+i-7]
+                              + train_set[N + j - 6] - train_set[N + j - 6 - 1]
+          forecast2.2[j] = noise.forecast2.2[j] + forecast2.2[j - 6] #this is hat(Y)_[N+i-7]
+                                + train_set[N + j - 6] - train_set[N + j - 6 - 1]
     }
   }
-  sum_squared_errors[1] = sum_squared_errors[1] + sum((forecast1.1 - test_set)^2)
-  sum_squared_errors[2] = sum_squared_errors[2] + sum((forecast1.2 - test_set)^2)
-  sum_squared_errors[3] = sum_squared_errors[3] + sum((forecast2.1 - test_set)^2)
-  sum_squared_errors[4] = sum_squared_errors[4] + sum((forecast2.2 - test_set)^2)
+  
+  # Compute sum of squared errors for 
+  sum_squared_errors[1] = sum_squared_errors[1] + sum((forecast1.1 - validation_set)^2)
+  sum_squared_errors[2] = sum_squared_errors[2] + sum((forecast1.2 - validation_set)^2)
+  sum_squared_errors[3] = sum_squared_errors[3] + sum((forecast2.1 - validation_set)^2)
+  sum_squared_errors[4] = sum_squared_errors[4] + sum((forecast2.2 - validation_set)^2)
 }
 ```
 
 
-
 ```{r rmsetable}
-#RMSE table
-rmse = matrix(sqrt(sum_squared_errors/10), nrow=4,ncol = 1)
-colnames(rmse) = "RMSPE"
-rownames(rmse) = c(
+# RMSPE table
+rmspe = matrix(sqrt(sum_squared_errors/10), nrow = 4, ncol = 1)
+colnames(rmspe) = "RMSPE"
+rownames(rmspe) = c(
         "Parametric Model + SARMA(2, 2)[5]",
-        "Parametric Model + ARMA(0, 11)",
-        "Differencing + MA(6, 0)",
-        "Differencing + ARMA(1, 2)]"
+        "Parametric Model + ARMA(11, 0)",
+        "Differencing + ARMA(0, 6)",
+        "Differencing + ARMA(1, 2)"
         )
-knitr::kable(rmse,caption = "Cross-validated out-of-sample root mean squared prediction error for the four models under consideration.")
+kable(rmspe, caption = "Cross-validated out-of-sample root mean 
+      squared prediction error for each of the four models") %>% 
+  kable_styling(latex_options = "HOLD_position")
 ```
     
 
-## Figures
+## Diagnostic Plots
 
-The relevant diagnostic plots for our chosen ARMA model are provided below:
+The relevant diagnostic plots for our chosen model are provided below.
 
-```{r, message= FALSE, results = "hide", fig.height = 3.5}
-final = sarima_wPACF(residual_boi, p = 11, d = 0, q = 0)
+```{r, message = FALSE, results = "hide", fig.cap = "Diagnostic plots for final differencing + ARMA(1, 2) model"}
+final_model = sarima_wPACF(differenced_data, d = 0, p = 1, q = 2)
 ```
+
+While the time series cross-validation was helpful in choosing the best model of the four being considered, the diagnostic plots in Figure 6 help us determine if the model actually appears to be a good fit for the data or not. Given that the residuals broadly appear homoschedastic, all the ACF values of the residuals are within the 95% confidence interval, all the standardised residuals are within the 95% confidence interval in the Normal Q-Q plot, all the p-values for the Ljung-Box statistics are greater than 0.05, and all but one of the PACF values of the residuals are within the 95% confidence interval, we conclude that the diagnostic plots do not indicate any major problems with our model while bearing in mind that this does not guarantee accuracy.
+
+\newpage
 
 ## Results
-The signal model is $$\text{log(y) = t * }sin(\frac{2\pi t}{62}) * cos(\frac{2\pi t}{62}) * sin(\frac{4\pi t }{62}) * cos(\frac{4\pi t }{62})$$ with * denoting interaction terms, y denoting the data and $$X_t = W_t + \Sigma_{i = 1}^{11} \phi_i X_{t-i}$$ where $W_t$ is white noise and each $\phi$ is an estimated coefficient.
 
-The noise model coefficients are given below:
+The signal model is $\nabla_1 \nabla_6 f(\text{Fires})$ with $f(x) = \dfrac{x^{-0.4} - 1}{-0.4}$ and the corresponding noise model is $X_t - \phi X_{t - 1} = W_t + \theta_1 W_{t - 1} + \theta_2 W_{t - 2}$, where $W_t$ is white noise and $\phi_1, \theta_1, \theta_2$ are all coefficients to be estimated. The noise model coefficients are given below.
 ```{r}
-kable(final$ttable[1:11, 1:2])
+est_coefficients = matrix(final_model$ttable[1:3, 1], nrow = 3, ncol = 1)
+colnames(est_coefficients) = "Estimate"
+rownames(est_coefficients) = c("AR1", "MA1", "MA2")
+kable(est_coefficients, caption = "Estimated coefficients for ARMA(1, 2) noise model") %>% 
+      kable_styling(latex_options = "HOLD_position")
 ```
-
-There are too many parameters for the signal model to be summarised in a succinct table.
 
 ## Predictions
 
-My final forecasted values are given below. 
+We plot the original data, along with the final forecasted values after the red line, in Figure 7 below.
 ```{r, fig.show="hide",include=FALSE}
-predsss = sarima.for(residual_boi, p = 11, d = 0, q = 0, n.ahead = 10)$pred
-final_preds = exp(predsss +  predict.lm(new_model_boi, data.frame(new_time = 63:72)))
+final_predictions = ((sarima.for(transformed_acres, n.ahead = 10, p = 1, 
+                    d = 1, q = 2, S = 6, Q = 0, D = 1)$pred) * -0.4 + 1)^-2.5
 ```
 
-```{r, fig.height = 4, fig.cap="Number of acres bruned annually with projected acres after the red line"}
-plot(1931:2019, c(acres, final_preds), "l", ylab = "Acres", xlab = "Year")
+```{r, fig.height = 4, fig.cap="Number of acres burned annually with projected acres after the red line"}
+plot(1931:2019, c(acres, final_predictions), "l", ylab = "Acres", xlab = "Year")
 abline(v = 2009, col = "red")
 ```
 
-Note that my forecasts come after the red line and indicate an expected increase in forest fires in the coming years with alternating steep drops.
-
+Based on the forecasted values, we expect there to be a jump in the number of acres burned annually to ~95,000 for four years, followed by a lull where the values drop to ~75,000, slightly above the baseline value of ~68,000 in 2009 for two years, followed by another steep increase to ~105,000 acres burned annually for four years. In terms of actionable insight, this means the Fire Department should expand its capacity in terms of equipment and personnel in accordance with an expected ~50% increase in the number of acres burned in the coming years, which we expect to be correlated with an increase in fires in terms of severity and/or sheer quantity.
 
 
 
